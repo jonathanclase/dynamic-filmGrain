@@ -1,0 +1,7 @@
+# requirements.apt
+# Install all dependencies with:
+#   xargs -a requirements.apt sudo apt-get install -y
+
+ffmpeg
+imagemagick
+bc
