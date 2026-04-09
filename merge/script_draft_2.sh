@@ -1,0 +1,22 @@
+#!/bin/bash
+# /media/DATA/Jonathan/My Projects/filmgrain/
+# grain.mp4
+# officepilot.mp4
+
+ffmpeg \
+  -i ../officepilot.mp4 \
+  -i ../grain.mp4 \
+  -filter_complex "
+    [1:v] scale=720:480,
+           format=yuva420p,
+           colorchannelmixer=aa=0.35
+    [grain_ready];
+    [0:v][grain_ready] overlay=0:0
+    [out]
+  " \
+  -map "[out]" \
+  -map 0:a? \
+  -t 15.01500 \
+  -c:v libx264 -crf 18 -preset slow \
+  -c:a copy \
+  output.mp4
