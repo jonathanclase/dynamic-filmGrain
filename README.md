@@ -99,8 +99,8 @@ Advanced parameters are defined near the top of the script under the **Internal 
 | `STEP_X` / `STEP_Y` | `30` / `25` | Maximum coordinate step between curve control points |
 | `MIN_RADIUS` / `MAX_RADIUS` | `1` / `3` | Circle radius range in pixels |
 | `COLOR` | `#BFBFBF` | Stroke color for all drawn shapes |
-| `POOL_BEZIER` / `POOL_CIRCLES` | `300` / `300` | Number of unique frames generated for each pool |
-| `MAX_COMPOSITES` | `300` | Number of composite frames built from the pools |
+| `POOL_BEZIER` / `POOL_CIRCLES` | `50` / `50` | Number of unique frames generated for each pool |
+| `MAX_COMPOSITES` | `720` | Number of composite frames built from the pools |
 
 Overlay images are generated at `W_GEN x H_GEN` and scaled to match the source video dimensions in the final encoding pass.
 
@@ -132,42 +132,47 @@ Generation time scales with `POOL_BEZIER`, `POOL_CIRCLES`, `MAX_COMPOSITES`,  th
 
 ## A Note on Randomness and Permutations
 
-The script mimics the behavior of film grain dust and scratches by generating imagery at random, subject to the following:
+The script mimics the behavior of film grain dust and scratches by generating imagery according to a subjective pseudo-random algorithm, subject to the following:
 
 $$N_A, N_B \in \left[\left\lfloor \frac{GRAININESS}{2} \right\rfloor,\ 2\left\lfloor \frac{GRAININESS}{2} \right\rfloor - 1\right]$$
 
 $$[CurvesPool]^{N_A} \times [CirclesPool]^{N_B}$$
 
-Where $CurvesPool$ and $CirclesPool$ are currently set to 300.
+Where $CurvesPool$ and $CirclesPool$ are currently set to 50.
 
 Therefore, at`GRAININESS=2`,  the number of unique possible images from which the composites can be generated is:
-$$300^1 \times 300^1 = 90{,}000$$
+$$50^1 \times 50^1 = 2{,}500$$
 
 And at`GRAININESS=5`the upper bound is:
-$$300^3 \times 300^3 \approx 7.29 \times 10^{14}$$
+$$50^3 \times 50^3 \approx 1.56 \times 10^{10}$$
 
-`MAX_COMPOSITES`(currently 300) composite frames are built and then sampled at random to create the series of overlay images used for the full video duration.
+The series of 50 curves and 50 circles are shuffled to a pseudo-random order, following the [Fisher-Yates method](https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle). Additional shuffled sequences are created until a set is created that is sufficient to allow for `MAX_COMPOSITES` frames, each with up to 3 source images, such as would be required at `GRAININESS=5`.
 
-The expected number of frames before a repeat of the same composite follows the [Birthday Problem](https://en.wikipedia.org/wiki/Birthday_problem). The expected number of draws before the a collision is approximately:
+`MAX_COMPOSITES`(currently 720) composite frames are built by sampling between 1 and 3 source images from the set of shuffled sequences. This number of frames was chosen to target a maximum gap between repeats of 30 seconds at 24 fps.
 
-$$E[\text{repetion}] \approx \sqrt{\frac{\pi \cdot 300}{2}} \approx 21.7 \text{ frames}$$
+The expected number of frames before a repeat of the same composite follows the [Birthday Problem](https://en.wikipedia.org/wiki/Birthday_problem). The expected number of composites before a collision is approximately:
+
+$$E[\text{repetition}] \approx \sqrt{\frac{\pi \cdot 720}{2}} \approx 33.6$$
 
 Depending on the framerate, viewers may notice repeat frames at the following theoretical maximums:
-| Framerate | Composites available | Max possible gap between repeats |
-|---|---|---|
-| 24 fps | 300 | ~12.5 seconds |
-| 15 fps | 300 | ~20 seconds |
-| 8 fps | 300 | ~37.5 seconds |
----
-Future changes may tweak the algorithms to better align with [subjectively ideal randomness](https://www.sciencedirect.com/science/article/pii/019688589190029I).
+| Framerate | Composites available | Expected gap between repeats | Maximum gap between repeats
+|---|---|---|---|
+| 24 fps | 720 | ~1.4 seconds | 30 seconds | 
+| 15 fps | 720 | ~2.2 seconds | 48 seconds |
+| 8 fps | 720 | ~4.2 seconds | 90 seconds |
+
+Creating a non-repeating sequence of composite images lasting 30 seconds at 24 fps would require 330,024 composites:
+
+$${\frac{\sqrt{\frac{\pi \cdot 330,024}{2}}}{24}} \approx {\frac{720}{24}}\approx30$$
+
+Generating this many frames would be prohibitively expensive with regard to performance. This may be addressed in a future iteration.
 
 ---
 
 ## To Do:
 
  * Add additional guardrails, as appropriate
- * Update the algorithms to better align with the subjective ideal
- * Improve performance and throughput
+  * Improve performance and throughput
  * Make grain opacity configurable with a command-line argument and defaulting
  * Make the overlay durations configurable to allow for the appearance of a slower framerate
 

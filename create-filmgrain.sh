@@ -44,8 +44,9 @@ STEP_X=30;        STEP_Y=25
 MIN_RADIUS=1;     MAX_RADIUS=3
 COLOR="#BFBFBF"
 
-POOL_BEZIER=300;  POOL_CIRCLES=300
-MAX_COMPOSITES=300
+POOL_BEZIER=50;  POOL_CIRCLES=50
+MAX_COMPOSITES=720
+MAX_GRAININESS=5
 
 TMPDIR=$(mktemp -d)
 MANIFEST="$TMPDIR/frames.txt"
@@ -71,6 +72,11 @@ if [ "$GRAININESS" -lt 2 ]; then
     exit 1
 fi
 
+if [ "$GRAININESS" -lt 2 ]; then
+    echo "Error: graininess must be 2 or greater (got: '$GRAININESS')."
+    exit 1
+fi
+
 CMD="ffprobe \
     -v error \
     -show_entries format=duration \
@@ -81,7 +87,7 @@ CMD="ffprobe \
     "
 
 read WIDTH HEIGHT FRAMERATE DURATION < <(
-    eval $CMD \
+    eval "$CMD" \
     | tr '\n' ' ')
 
 # --- ffprobe output validation ---
@@ -127,6 +133,8 @@ fi
 
 echo "Generating $POOL_BEZIER curve frames at `date +"%T.%N"`"
 
+    declare -a BEZIERSEQUENCE
+
     convert -size ${W_GEN}x${H_GEN} xc:black -depth 8 -colorspace sRGB -type TrueColor -fill "#010101" -draw "point 0,0" "$TMPDIR/blank.png"
 
     STEP_X2=$((STEP_X/2));    STEP_Y2=$((STEP_Y/2))
@@ -161,7 +169,8 @@ echo "Generating $POOL_BEZIER curve frames at `date +"%T.%N"`"
         CMD="$CMD -fill \"#010101\" -draw \"point 0,0\""    # ANCHOR: forces RGB colorspace by adding near-black pixel
         CMD="$CMD \"$FRAME\""
 
-        eval $CMD
+        eval "$CMD"
+        BEZIERSEQUENCE+=("$FRAME")
     done
 
 echo -e "Finished generating $POOL_BEZIER curve frames at `date +"%T.%N"`"
@@ -185,6 +194,8 @@ fi
 
 echo -e "Generating $POOL_CIRCLES circle frames at `date +"%T.%N"`"
 
+    declare -a CIRCLESEQUENCE
+
     for f in $(seq -w 1 $POOL_CIRCLES); do
         FRAME="$TMPDIR/circles_${f}.png"
         CMD="convert -size ${W_GEN}x${H_GEN} xc:black"
@@ -203,10 +214,12 @@ echo -e "Generating $POOL_CIRCLES circle frames at `date +"%T.%N"`"
         CMD="$CMD -fill \"#010101\" -draw \"point 0,0\""    # ANCHOR: forces RGB colorspace by adding near-black pixel
         CMD="$CMD \"$FRAME\""
 
-        eval $CMD
+        eval "$CMD"
+        CIRCLESEQUENCE+=("$FRAME")
     done
 
 echo -e "Finished generating $POOL_CIRCLES circle frames at `date +"%T.%N"`"
+
 
 # -----------------------------------------------------------
 # Phase 3: Composite pool into combined frames
@@ -221,13 +234,49 @@ for VAR_NAME in MAX_COMPOSITES POOL_BEZIER POOL_CIRCLES; do
     fi
 done
 
-GRAINYFLOOR=$((GRAININESS/2))
-
 echo -e "Generating $MAX_COMPOSITES composites at `date +"%T.%N"`"
+
+    GRAINYFLOOR=$((GRAININESS/2))
+
+    declare -a FINALBEZIERSEQUENCE
+    declare -a FINALCIRCLESEQUENCE
+
+    #Use the Fisher-Yates shuffle to resort the bezier and circle pools
+    
+    for i in $(seq 1 $((MAX_COMPOSITES*MAX_GRAININESS/${#BEZIERSEQUENCE[@]}))); do
+        for (( j=0; j<${#BEZIERSEQUENCE[@]}-1; j++ )); do
+            X=$(($j+RANDOM%(${#BEZIERSEQUENCE[@]})-$j))
+            Y=${BEZIERSEQUENCE[$X]}
+            BEZIERSEQUENCE[$X]=${BEZIERSEQUENCE[$j]}
+            BEZIERSEQUENCE[$j]=$Y
+        done;
+
+        #Create a master list of randomly-sequenced bezier frames
+        for j in "${BEZIERSEQUENCE[@]}"; do
+            FINALBEZIERSEQUENCE+=("$j")
+        done;
+    done;
+
+    for i in $(seq 1 $((MAX_COMPOSITES*MAX_GRAININESS/${#CIRCLESEQUENCE[@]}))); do
+        for (( j=0; j<${#CIRCLESEQUENCE[@]}-1; j++ )); do
+            X=$(($j+RANDOM%(${#CIRCLESEQUENCE[@]})-$j))
+            Y=${CIRCLESEQUENCE[$X]}
+            CIRCLESEQUENCE[$X]=${CIRCLESEQUENCE[$j]}
+            CIRCLESEQUENCE[$j]=$Y
+        done;
+
+        #Create a master list of randomly-sequenced circle frames        
+        for j in "${CIRCLESEQUENCE[@]}"; do
+            FINALCIRCLESEQUENCE+=("$j")
+        done;
+    done;
+
     FRAMECOUNT=0
 
     OFFSET_X=12;    OFFSET_Y=10
     OFFSET_X2=$((OFFSET_X/2));    OFFSET_Y2=$((OFFSET_Y/2));
+
+    BEIZERCOUNT=0;  CIRCLECOUNT=0;
 
     for f in $(seq -w 1 $MAX_COMPOSITES); do
         NUM_B=$(( (RANDOM % GRAINYFLOOR) + GRAINYFLOOR ))                  # NUM_B: bezier layers per composite
@@ -237,28 +286,28 @@ echo -e "Generating $MAX_COMPOSITES composites at `date +"%T.%N"`"
         CMD="convert \"$TMPDIR/blank.png\""
 
         for b in $(seq 1 $NUM_B); do
-            B=$(( (RANDOM % POOL_BEZIER) + 1 ))
-            B_PAD=$(printf "%03d" $B)
+            B_PAD=${FINALBEZIERSEQUENCE[BEIZERCOUNT]}
+            (( BEIZERCOUNT++ ))
             OFF_BX=$(( (RANDOM % OFFSET_X) - OFFSET_X2 ))
             OFF_BY=$(( (RANDOM % OFFSET_Y) - OFFSET_Y2 ))
             GEOM_B=$(printf "%+d%+d" $OFF_BX $OFF_BY)
-            CMD="$CMD \( \"$TMPDIR/bezier_${B_PAD}.png\" -repage \"${GEOM_B}+0\" \) -compose Screen -composite"
+            CMD="$CMD \( \"$B_PAD\" -repage \"${GEOM_B}+0\" \) -compose Screen -composite"
         done
 
         for c in $(seq 1 $NUM_C); do
-            C=$(( (RANDOM % POOL_CIRCLES) + 1 ))
-            C_PAD=$(printf "%03d" $C)
+            C_PAD=${FINALCIRCLESEQUENCE[CIRCLECOUNT]}
+            (( CIRCLECOUNT++ ))
             OFF_CX=$(( (RANDOM % OFFSET_X) - OFFSET_X2 ))
             OFF_CY=$(( (RANDOM % OFFSET_Y) - OFFSET_Y2 ))
             GEOM_C=$(printf "%+d%+d" $OFF_CX $OFF_CY)
-            CMD="$CMD \( \"$TMPDIR/circles_${C_PAD}.png\" -repage \"${GEOM_C}+0\" \) -compose Screen -composite"
+            CMD="$CMD \( \"$C_PAD\" -repage \"${GEOM_C}+0\" \) -compose Screen -composite"
         done
 
-        FRAMECOUNT_PAD=$(printf "%03d" $FRAMECOUNT)
+        FRAMECOUNT_PAD=$(printf "%06d" $FRAMECOUNT)
 
         CMD="$CMD -depth 8 -colorspace sRGB -type TrueColor \"$TMPDIR/composite_${FRAMECOUNT_PAD}.png\""
-        
-        eval $CMD
+    
+        eval "$CMD"
     done
 
 echo -e "Finished generating $MAX_COMPOSITES composites at `date +"%T.%N"`"
@@ -270,11 +319,28 @@ echo -e "Generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
 
     > "$MANIFEST"                           # MANIFEST_RESET: clear manifest before writing
 
-    for f in $(seq -w 1 $NUM_FRAMES); do
-        PICK=$(( (RANDOM % FRAMECOUNT) + 1 ))
-        PICK_PAD=$(printf "%03d" $PICK)
-        echo "file '$TMPDIR/composite_${PICK_PAD}.png'" >> "$MANIFEST"
-        echo "duration ${FRAMES_PER_SECOND}"            >> "$MANIFEST"
+    declare -a FRAMENUM
+
+    for A in $(seq 1 $FRAMECOUNT); do
+        FRAMENUM+=($A)
+    done;
+
+    for f in $(seq 1 $((($NUM_FRAMES/$FRAMECOUNT)+1))); do
+        
+        #Fisher-Yates shuffle of the array
+        for (( B=0; B<${#FRAMENUM[@]} - 1; B++ )); do
+            C=$(($B+RANDOM%($MAX_COMPOSITES-$B)))
+            D=${FRAMENUM[$C]}
+            FRAMENUM[$C]=${FRAMENUM[$B]}
+            FRAMENUM[$B]=$D
+        done;        
+
+        for B in ${FRAMENUM[*]}; do
+            PICK_PAD=$(printf "%06d" $B)        
+            echo "file '$TMPDIR/composite_${PICK_PAD}.png'" >> "$MANIFEST"
+            echo "duration ${FRAMES_PER_SECOND}"            >> "$MANIFEST"
+        done
+    
     done
 
     # Concat demuxer: repeat last frame without duration
