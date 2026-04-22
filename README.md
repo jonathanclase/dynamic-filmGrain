@@ -169,12 +169,36 @@ Generating this many frames would be prohibitively expensive with regard to perf
 
 ---
 
-## To Do:
+## Roadmap
 
- * Add additional guardrails, as appropriate
-  * Improve performance and throughput
- * Make grain opacity configurable with a command-line argument and defaulting
- * Make the overlay durations configurable to allow for the appearance of a slower framerate
+***Goal:** To create a realistic-looking film-grain overaly tool that can be utilized without the need for video-editing software, and that runs in a performant way*
+
+#### 🟩 ${\color{green}\textsf{Now}}$
+
+- Make grain opacity configurable with a command-line argument and defaulting
+    - Goal: Increase **realistic look** and further **reduce the need for more sophisticated video-editing** software
+    - Implement `OPACITY` command-line argument as optional argument
+    - Add default value
+    - Incorporate the value into the filter-complex argument
+    - Add guardrails for user inputs
+    - Add an explanation to the helper function
+    - Update the README
+
+#### 🟦 ${\color{blue}\textsf{Next}}$
+- Make the overlay durations configurable to allow for the appearance of a slower framerate
+    - Goal: Increase **realistic look** and further **reduce the need for more sophisticated video-editing** software
+    - Implement new variable
+    - Determine viability of a command-line argument (with interpretation) vs. an internal parameter
+
+#### 🟧 ${\color{orange}\textsf{Later}}$
+
+- Add additional guardrails, as appropriate
+    - Goal: Improve the **usability** and **reduce the need for more sophisticated video-editing** software
+    - Normalize all existing parameters, e.g. `GRAININESS`
+- Improve performance and throughput
+     - Goal: Improve the ability to run in a **performant way**
+     - Objectives and measures TBD
+ 
 
 ---
 
