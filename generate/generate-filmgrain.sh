@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # -----------------------------------------------------------
-# Usage: ./generate-filmgrain.sh <input> <output> [graininess]
-# Example: ./generate-filmgrain.sh pilot.mp4 output.mp4 5
+# Usage: ./generate-filmgrain.sh input [graininess]
+# Example: ./generate-filmgrain.sh -i=pilot.mp4 -g=5
 # -----------------------------------------------------------
 
-DEPENDENCIES=(ffprobe convert bc)           # DEPENDENCIES: required external commands
+DEPENDENCIES=(ffprobe convert)           # DEPENDENCIES: required external commands
 MISSING=0
 
 for DEP in "${DEPENDENCIES[@]}"; do
@@ -19,17 +19,25 @@ if [ "$MISSING" -eq 1 ]; then
     exit 1
 fi
 
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <input> <output> [graininess]"
-    echo "  input:                    path to the main video file"
-    echo "  output:                   path to the output video file"
-    echo "  graininess:               optional integer controlling grain density (default: 5)"
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -i*) MAININPUT="${1#*=}";;
+        --input*) MAININPUT="${1#*=}";;
+        -g*) GRAININESS="${1#*=}";;
+        --graininess*) GRAININESS="${1#*=}";;
+        # *) echo "Unknown parameter passed: $1";;
+    esac
+    shift
+done
+
+if [[ -z "$MAININPUT" ]]; then
+    echo "Usage: $0 input output [graininess] [opacity] [parameters]"
+    echo "  -i=, --input=:                    path to the input video"
+    echo "  -g=, --graininess=:               optional integer controlling grain density (2 - 5) (default: 5)"
     exit 1
 fi
 
-MAININPUT="$1"                          # ARG_1: input video path
-OUTPUT="$2"                             # ARG_2: output video path
-GRAININESS="${3:-5}"                    # ARG_3: grain density, default 5 if omitted
+GRAININESS="${GRAININESS:-5}"
 
 # -----------------------------------------------------------
 # Internal Parameters. Adjust to control advanced settings
@@ -61,7 +69,7 @@ fi
 
 # Validate graininess is a positive integer
 if ! [[ "$GRAININESS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: graininess must be a positive integer."
+    echo "Error: graininess must be a positive integer (got: $GRAININESS)."
     exit 1
 fi
 
@@ -70,7 +78,7 @@ if [ "$GRAININESS" -lt 2 ]; then
     exit 1
 fi
 
-if [ "$GRAININESS" -lt 2 ]; then
+if [ "$GRAININESS" -gt 5 ]; then
     echo "Error: graininess must be 2 or greater (got: '$GRAININESS')."
     exit 1
 fi
@@ -342,13 +350,7 @@ echo -e "Generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
     done
 
     # Concat demuxer: repeat last frame without duration
-    LAST_PICK=$(printf "%03d" $(( (RANDOM % FRAMECOUNT) + 1 )))
+    LAST_PICK=$(printf "%06d" $(( (RANDOM % FRAMECOUNT) + 1 )))
     echo "file '$TMPDIR/composite_${LAST_PICK}.png'"    >> "$MANIFEST"
 
 echo -e "Finished generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
-
-# -----------------------------------------------------------
-# Phase 5: Cleanup
-# -----------------------------------------------------------
-
-    rm -rf "${TMPDIR}"

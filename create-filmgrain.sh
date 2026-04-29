@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # -----------------------------------------------------------
-# Usage: ./create-filmgrain.sh <input> <output> [graininess] [additional_ffmpeg_params]
-# Example: ./create-filmgrain.sh pilot.mp4 output.mp4 5 "-loglevel panic"
+# Usage: ./create-filmgrain.sh input output [graininess] [opacity] [additional_ffmpeg_params]
+# Example: ./create-filmgrain.sh -i=pilot.mp4 -o=output.mp4 -g=5 -a=0.35 -p="-map 0:a? -c:a copy -loglevel panic"
 # -----------------------------------------------------------
 
 DEPENDENCIES=(ffprobe ffmpeg convert bc)           # DEPENDENCIES: required external commands
@@ -19,19 +19,36 @@ if [ "$MISSING" -eq 1 ]; then
     exit 1
 fi
 
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <input> <output> [graininess] [additional_ffmpeg_params]"
-    echo "  input:                    path to the main video file"
-    echo "  output:                   path to the output video file"
-    echo "  graininess:               optional integer controlling grain density (default: 5)"
-    echo "  additional_ffmpeg_params: optional, quoted string of ffmpeg flags"
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -i*) MAININPUT="${1#*=}";;
+        --input*) MAININPUT="${1#*=}";;
+        -o*) OUTPUT="${1#*=}";;
+        --output*) OUTPUT="${1#*=}";;
+        -g*) GRAININESS="${1#*=}";;
+        --graininess*) GRAININESS="${1#*=}";;
+        -p*) ADDITIONAL_PARAMETERS="${1#*=}";;
+        --parameters*) ADDITIONAL_PARAMETERS="${1#*=}";;
+        -a*) OPACITY="${1#*=}";;
+        --opacity*) OPACITY="${1#*=}";;
+        # *) echo "Unknown parameter passed: $1";;
+    esac
+    shift
+done
+
+if [[ -z "$MAININPUT" || -z "$OUTPUT" ]]; then
+    echo "Usage: $0 input output [graininess] [opacity] [parameters]"
+    echo "  -i=, --input=:                    path to the input video"
+    echo "  -o=, --output=:                   path for the output"
+    echo "  -g=, --graininess=:               optional integer controlling grain density (2 - 5) (default: 5)"
+    echo "  -a=, --opacity=:                  optional, opacity of the overlay (0.0 - 1.0) (default: 0.35)"
+    echo "  -p=, --parameters=:               optional, quoted string of ffmpeg flags (default: None)"
     exit 1
 fi
 
-MAININPUT="$1"                          # ARG_1: input video path
-OUTPUT="$2"                             # ARG_2: output video path
-GRAININESS="${3:-5}"                    # ARG_3: grain density, default 5 if omitted
-ADDITIONAL_PARAMETERS="${4:-""}"        # ARG_4: optional ffmpeg flags, empty string if omitted
+GRAININESS="${GRAININESS:-5}"
+ADDITIONAL_PARAMETERS="${ADDITIONAL_PARAMETERS:-""}"
+OPACITY="${OPACITY:-0.35}"
 
 # -----------------------------------------------------------
 # Internal Parameters. Adjust to control advanced settings
@@ -63,7 +80,7 @@ fi
 
 # Validate graininess is a positive integer
 if ! [[ "$GRAININESS" =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: graininess must be a positive integer."
+    echo "Error: graininess must be a positive integer (got: $GRAININESS)."
     exit 1
 fi
 
@@ -72,8 +89,24 @@ if [ "$GRAININESS" -lt 2 ]; then
     exit 1
 fi
 
-if [ "$GRAININESS" -lt 2 ]; then
+if [ "$GRAININESS" -gt 5 ]; then
     echo "Error: graininess must be 2 or greater (got: '$GRAININESS')."
+    exit 1
+fi
+
+if ! [[ "$OPACITY" =~ ^0?\.[0-9]*$ ]]; then
+    echo "Error: opacity must be a number between 0.0 and 1.0 (got: $OPACITY)."
+    exit 1
+fi
+
+if (( $(echo "$OPACITY > 1.0" | bc -l) )); then
+    echo "Error: opacity must be between 0.0 and 1.0 (got: $OPACITY)."
+    exit 1
+fi
+
+if (( $(echo "$OPACITY < 0.0" | bc -l) )); then
+    #It's unlikely anyone would get here, but the parameter could be set directly in the script.
+    echo "Error: opacity must be between 0.0 and 1.0 (got: $OPACITY)."
     exit 1
 fi
 
@@ -344,7 +377,7 @@ echo -e "Generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
     done
 
     # Concat demuxer: repeat last frame without duration
-    LAST_PICK=$(printf "%03d" $(( (RANDOM % FRAMECOUNT) + 1 )))
+    LAST_PICK=$(printf "%06d" $(( (RANDOM % FRAMECOUNT) + 1 )))
     echo "file '$TMPDIR/composite_${LAST_PICK}.png'"    >> "$MANIFEST"
 
 echo -e "Finished generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
@@ -364,7 +397,7 @@ echo -e "Generating final combined video output at `date +"%T.%N"`"
         [1:v] format=rgb24,
                scale=${WIDTH}:${HEIGHT},
                format=rgba,
-               colorchannelmixer=aa=0.35
+               colorchannelmixer=aa=${OPACITY}
         [grain_ready];
         [0:v][grain_ready] overlay=0:0
         [out]

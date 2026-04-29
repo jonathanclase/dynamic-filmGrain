@@ -11,7 +11,7 @@ A command-line-only script for bash that generates a pseudo-random old film grai
 ## Example
 
 ```bash
-./create-filmgrain.sh pilot.mp4 output.mp4 5 "-map 0:a? -c:a copy -loglevel panic"
+./create-filmgrain.sh -i=pilot.mp4 -o=output.mp4 -g=5 -a=0.35 -p="-map 0:a? -c:a copy -loglevel panic"
 ```
 
 
@@ -48,23 +48,24 @@ xargs -a requirements.apt sudo apt-get install -y
 ## Usage
 
 ```
-./create-filmgrain.sh <input> <output> [graininess] [additional_ffmpeg_params]
+./create-filmgrain.sh input output [graininess] [opacity] [parameters]
 ```
 
 **Or via Docker**:
 
 ```
-docker run --rm -v <host path to media assets>:/data <image name> /data/<input> /data/<output> [graininess] [additional_ffmpeg_params]
+docker run --rm -v <host path to media assets>:/data <image name> -i=/data/<input> -o=/data/<output> [graininess] [opacity] [parameters]
 ```
 
 ### Arguments
 
 | Argument | Required | Default | Description |
 |---|---|---|---|
-| `input` | Yes | n/a | Path to the source video file |
-| `output` | Yes | n/a | Path to the output video file |
-| `graininess` | No | `5` | Integer (≥ 2) controlling the intensity of the graininess effect |
-| `additional_ffmpeg_params` | No | empty | Additional flags passed to ffmpeg during the final encode step |
+| `-i=, --input=` | Yes | n/a | Path to the source video file |
+| `-o=, --output=` | Yes | n/a | Path to the output video file |
+| `-g=, --graininess=` | No | `5` | Integer (2 - 5) controlling the intensity of the graininess effect |
+| `-a=, --opacity=` | No | `0.35` | Float value (0.0 - 1.0) controlling the opacity of the layover |
+| `-p=, --parameters=` | No | empty | Additional flags passed to ffmpeg during the final encode step |
 
 > **Note:** By default, the script encodes only the first video stream for a given input. `-map 0:a?` or a similar parameter set is required to include additional streams in the output.
 
@@ -73,17 +74,23 @@ docker run --rm -v <host path to media assets>:/data <image name> /data/<input> 
 
 Using defaults:
 ```bash
-./create-filmgrain.sh input.mp4 output.mp4
+./create-filmgrain.sh -i=input.mp4 -o=output.mp4
 ```
 
 With specific graininess:
 ```bash
-./create-filmgrain.sh input.mp4 output.mp4 3
+./create-filmgrain.sh -i=input.mp4 -o=output.mp4 -g=3
 ```
+
+With specific graininess and specific opacity:
+```bash
+./create-filmgrain.sh -i=input.mp4 -o=output.mp4 -g=3 -a=0.4
+```
+
 
 With additional ffmpeg flags:
 ```bash
-./create-filmgrain.sh input.mp4 output.mp4 5 "-loglevel panic -map 0:a? -c:a copy"
+./create-filmgrain.sh -i=input.mp4 -o=output.mp4 -p="-loglevel panic -map 0:a? -c:a copy"
 ```
 
 ---
@@ -118,7 +125,8 @@ The script produces a single video file (typically an H.264 `.mp4`) at the sourc
 
 - Input must be a video format readable by ffmpeg (and ffprobe)
 - Audio and other streams are passed through only if `-map 0:a? -c:a copy` is included in `additional_ffmpeg_params`. Additional preferences for the ffmpeg encoding can ba passed in this argument as well.
-- `GRAININESS` must be 2 or greater
+- `GRAININESS` must be numeric and between 2 and 5
+- `OPACITY` must be numeric and between 0.0 and 1.0
 
 ---
 
@@ -173,32 +181,31 @@ Generating this many frames would be prohibitively expensive with regard to perf
 
 ***Goal:** To create a realistic-looking film-grain overaly tool that can be utilized without the need for video-editing software, and that runs in a performant way*
 
-#### 🟩 ${\color{green}\textsf{Now}}$
+#### 🟪 ${\color{purple}\textsf{Completed}}$
+- ~~Make grain opacity configurable with a command-line argument and defaulting~~
+    - ~~Goal: Increase **realistic look** and further **reduce the need for more sophisticated video-editing** software~~
 
-- Make grain opacity configurable with a command-line argument and defaulting
+#### 🟩 ${\color{green}\textsf{Now}}$
+- Make the overlay durations configurable to allow for the appearance of a slower framerate
     - Goal: Increase **realistic look** and further **reduce the need for more sophisticated video-editing** software
-    - Implement `OPACITY` command-line argument as optional argument
+    - Implement FRAMERATE command-line argument as optional argument
     - Add default value
-    - Incorporate the value into the filter-complex argument
     - Add guardrails for user inputs
+    - Incorporate the value into the manifest generation section
     - Add an explanation to the helper function
     - Update the README
 
+
 #### 🟦 ${\color{blue}\textsf{Next}}$
-- Make the overlay durations configurable to allow for the appearance of a slower framerate
-    - Goal: Increase **realistic look** and further **reduce the need for more sophisticated video-editing** software
-    - Implement new variable
-    - Determine viability of a command-line argument (with interpretation) vs. an internal parameter
-
-#### 🟧 ${\color{orange}\textsf{Later}}$
-
 - Add additional guardrails, as appropriate
     - Goal: Improve the **usability** and **reduce the need for more sophisticated video-editing** software
     - Normalize all existing parameters, e.g. `GRAININESS`
+
+#### 🟧 ${\color{orange}\textsf{Later}}$
 - Improve performance and throughput
      - Goal: Improve the ability to run in a **performant way**
      - Objectives and measures TBD
- 
+
 
 ---
 

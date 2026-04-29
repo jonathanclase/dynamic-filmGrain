@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # -----------------------------------------------------------
-# Usage: ./merge-inputs.sh <input> <output> <image folder path> [additional_ffmpeg_params]
-# Example: ./merge-inputs.sh pilot.mp4 output.mp4 /path/to/composites/ "-loglevel panic"
+# Usage: ./merge-inputs.sh input output tmpdir [opacity] [additional_ffmpeg_params]
+# Example: ./merge-inputs.sh -i=pilot.mp4 -o=output.mp4 -t=/mnt/TEMP -a=0.35 -p="-map 0:a? -c:a copy -loglevel panic"
 # -----------------------------------------------------------
 
 DEPENDENCIES=(ffprobe ffmpeg)           # DEPENDENCIES: required external commands
@@ -19,19 +19,39 @@ if [ "$MISSING" -eq 1 ]; then
     exit 1
 fi
 
-if [ $# -lt 2 ]; then
-    echo "Usage: $0 <input> <output> [additional_ffmpeg_params]"
-    echo "  input:                    path to the main video file"
-    echo "  output:                   path to the output video file"
-    echo "  tempdir:                  path to the composite images and the frames.txt manifest"
-    echo "  additional_ffmpeg_params: optional, quoted string of ffmpeg flags"
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -i*) MAININPUT="${1#*=}";;
+        --input*) MAININPUT="${1#*=}";;
+        -o*) OUTPUT="${1#*=}";;
+        --output*) OUTPUT="${1#*=}";;
+        -t*) TMPDIR="${1#*=}";;
+        --tempdir*) TMPDIR="${1#*=}";;
+        -p*) ADDITIONAL_PARAMETERS="${1#*=}";;
+        --parameters*) ADDITIONAL_PARAMETERS="${1#*=}";;
+        -a*) OPACITY="${1#*=}";;
+        --opacity*) OPACITY="${1#*=}";;
+        # *) echo "Unknown parameter passed: $1";;
+    esac
+    shift
+done
+
+if [[ -z "$MAININPUT" || -z "$TMPDIR" ]]; then
+    echo "Usage: $0 input output [graininess] [opacity] [parameters]"
+    echo "  -i=, --input=:                    path to the input video"
+    echo "  -o=, --output=:                   path for the output"
+    echo "  -t=, --tempdir=:                  path to the folder containing composite images and the frames.txt manifest"
+    echo "  -a=, --opacity=:                  optional, opacity of the overlay (0.0 - 1.0) (default: 0.35)"
+    echo "  -p=, --parameters=:               optional, quoted string of ffmpeg flags (default: None)"
     exit 1
 fi
 
-MAININPUT="$1"                          # ARG_1: input video path
-OUTPUT="$2"                             # ARG_2: output video path
-TMPDIR="$3"                             # ARG_3: path to the composite images and manifest
-ADDITIONAL_PARAMETERS="${4:-""}"        # ARG_4: optional ffmpeg flags, empty string if omitted
+ADDITIONAL_PARAMETERS="${ADDITIONAL_PARAMETERS:-""}"
+OPACITY="${OPACITY:-0.35}"
+
+# -----------------------------------------------------------
+# Internal Parameters. Adjust to control advanced settings
+# -----------------------------------------------------------
 
 MANIFEST="$TMPDIR/frames.txt"
 
@@ -61,7 +81,7 @@ CMD="ffprobe \
     "
 
 read WIDTH HEIGHT FRAMERATE DURATION < <(
-    eval $CMD \
+    eval "$CMD" \
     | tr '\n' ' ')
 
 # --- ffprobe output validation ---
@@ -86,7 +106,6 @@ FRAMERATE_NUM=$(echo $FRAMERATE | cut -d'/' -f1)    # FRAMERATE_NUM: numerator
 FRAMERATE_DEN=$(echo $FRAMERATE | cut -d'/' -f2)    # FRAMERATE_DEN: denominator
 FRAMERATE=$(awk "BEGIN {printf \"%d\", $FRAMERATE_NUM / $FRAMERATE_DEN}")  # FRAMERATE: resolved decimal
 NUM_FRAMES=$(awk "BEGIN {printf \"%d\", $DURATION / 1 * $FRAMERATE}")
-FRAMES_PER_SECOND=$(awk "BEGIN {printf \"%.6f\", 1 / $FRAMERATE}")
 
 # -----------------------------------------------------------
 # Phase 1: Rejoin the final set of inputs together
@@ -104,7 +123,7 @@ echo -e "Generating final combined video output at `date +"%T.%N"`"
         [1:v] format=rgb24,
                scale=${WIDTH}:${HEIGHT},
                format=rgba,
-               colorchannelmixer=aa=0.35
+               colorchannelmixer=aa=${OPACITY}
         [grain_ready];
         [0:v][grain_ready] overlay=0:0
         [out]
