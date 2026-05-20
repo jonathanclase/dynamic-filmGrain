@@ -25,6 +25,8 @@ while [[ "$#" -gt 0 ]]; do
         --input*) MAININPUT="${1#*=}";;
         -g*) GRAININESS="${1#*=}";;
         --graininess*) GRAININESS="${1#*=}";;
+        -f*) GRAIN_FRAMERATE="${1#*=}";;
+        --framerate*) GRAIN_FRAMERATE="${1#*=}";;
         # *) echo "Unknown parameter passed: $1";;
     esac
     shift
@@ -33,11 +35,12 @@ done
 if [[ -z "$MAININPUT" ]]; then
     echo "Usage: $0 input output [graininess] [opacity] [parameters]"
     echo "  -i=, --input=:                    path to the input video"
-    echo "  -g=, --graininess=:               optional integer controlling grain density (2 - 5) (default: 5)"
+    echo "  -g=, --graininess=:               optional integer controlling grain density (1 - 4) (default: 4)"
+    echo "  -f=, --framerate=:                optional, grain overlay framerate in fps (default: source video framerate)"
     exit 1
 fi
 
-GRAININESS="${GRAININESS:-5}"
+GRAININESS="${GRAININESS:-4}"
 
 # -----------------------------------------------------------
 # Internal Parameters. Adjust to control advanced settings
@@ -52,7 +55,7 @@ COLOR="#BFBFBF"
 
 POOL_BEZIER=50;  POOL_CIRCLES=50
 MAX_COMPOSITES=720
-MAX_GRAININESS=5
+MAX_GRAININESS=4
 
 TMPDIR=$(mktemp -d)
 MANIFEST="$TMPDIR/frames.txt"
@@ -73,13 +76,8 @@ if ! [[ "$GRAININESS" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
-if [ "$GRAININESS" -lt 2 ]; then
-    echo "Error: graininess must be 2 or greater (got: '$GRAININESS')."
-    exit 1
-fi
-
-if [ "$GRAININESS" -gt 5 ]; then
-    echo "Error: graininess must be 2 or greater (got: '$GRAININESS')."
+if [ "$GRAININESS" -gt 4 ]; then
+    echo "Error: graininess must be 4 or less (got: '$GRAININESS')."
     exit 1
 fi
 
@@ -119,6 +117,20 @@ FRAMERATE_DEN=$(echo $FRAMERATE | cut -d'/' -f2)    # FRAMERATE_DEN: denominator
 FRAMERATE=$(awk "BEGIN {printf \"%d\", $FRAMERATE_NUM / $FRAMERATE_DEN}")  # FRAMERATE: resolved decimal
 NUM_FRAMES=$(awk "BEGIN {printf \"%d\", $DURATION / 1 * $FRAMERATE}")
 FRAMES_PER_SECOND=$(awk "BEGIN {printf \"%.6f\", 1 / $FRAMERATE}")
+
+GRAIN_FRAMERATE="${GRAIN_FRAMERATE:-$FRAMERATE}"
+
+if ! [[ "$GRAIN_FRAMERATE" =~ ^[0-9]+(\.[0-9]+)?$ ]] || (( $(echo "$GRAIN_FRAMERATE <= 0" | bc -l) )); then
+    echo "Error: framerate must be a positive number (got: $GRAIN_FRAMERATE)."
+    exit 1
+fi
+if (( $(echo "$GRAIN_FRAMERATE > $FRAMERATE" | bc -l) )); then
+    echo "Error: framerate must not exceed the source video framerate ($FRAMERATE fps) (got: $GRAIN_FRAMERATE)."
+    exit 1
+fi
+
+NUM_GRAIN_FRAMES=$(awk "BEGIN {printf \"%d\", $DURATION / 1 * $GRAIN_FRAMERATE}")
+GRAIN_FRAMES_PER_SECOND=$(awk "BEGIN {printf \"%.6f\", 1 / $GRAIN_FRAMERATE}")
 
 # -----------------------------------------------------------
 # Phase 1: Generate bezier pool
@@ -242,7 +254,7 @@ done
 
 echo -e "Generating $MAX_COMPOSITES composites at `date +"%T.%N"`"
 
-    GRAINYFLOOR=$((GRAININESS/2))
+    GRAINYFLOOR=$(( (GRAININESS + 1) / 2 ))
 
     declare -a FINALBEZIERSEQUENCE
     declare -a FINALCIRCLESEQUENCE
@@ -331,20 +343,20 @@ echo -e "Generating input manifest for $NUM_FRAMES frames at `date +"%T.%N"`"
         FRAMENUM+=($A)
     done;
 
-    for f in $(seq 1 $((($NUM_FRAMES/$FRAMECOUNT)+1))); do
-        
+    for f in $(seq 1 $((($NUM_GRAIN_FRAMES/$FRAMECOUNT)+1))); do
+
         #Fisher-Yates shuffle of the array
         for (( B=0; B<${#FRAMENUM[@]} - 1; B++ )); do
             C=$(($B+RANDOM%($MAX_COMPOSITES-$B)))
             D=${FRAMENUM[$C]}
             FRAMENUM[$C]=${FRAMENUM[$B]}
             FRAMENUM[$B]=$D
-        done;        
+        done;
 
         for B in ${FRAMENUM[*]}; do
-            PICK_PAD=$(printf "%06d" $B)        
+            PICK_PAD=$(printf "%06d" $B)
             echo "file '$TMPDIR/composite_${PICK_PAD}.png'" >> "$MANIFEST"
-            echo "duration ${FRAMES_PER_SECOND}"            >> "$MANIFEST"
+            echo "duration ${GRAIN_FRAMES_PER_SECOND}"      >> "$MANIFEST"
         done
     
     done
